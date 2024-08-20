@@ -307,18 +307,6 @@ where
 		1
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != 9 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 9 });
-		}
-
-		// This is unfortunate that it needs to unpack and repack...
-		let result = iter::zip(query[1..].iter(), self.mix_bytes)
-			.map(|(x_i, coeff)| *x_i * coeff)
-			.sum::<P::Scalar>();
-		Ok(result - query[0])
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 9 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 9 });
@@ -822,20 +810,19 @@ where
 	Comm: Clone,
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
 {
-	let ext_index = trace_witness.to_index::<FW>(trace_oracle)?;
-	let mut witness_index = ext_index.witness_index();
+	let mut witness = trace_witness.to_index::<FW>(trace_oracle)?;
 
 	// Round 1
 	let trace1b_commit_polys = oracles
 		.committed_oracle_ids(trace_oracle.trace1b_batch_id)
-		.map(|oracle_id| ext_index.get::<BinaryField1b>(oracle_id))
+		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	let (trace1b_comm, trace1b_committed) = pcs1b.commit(&trace1b_commit_polys)?;
 
 	let trace8b_commit_polys = oracles
 		.committed_oracle_ids(trace_oracle.trace8b_batch_id)
 		.map(|oracle_id| {
-			let witness_poly = ext_index.get::<AESTowerField8b>(oracle_id)?;
+			let witness_poly = witness.get::<AESTowerField8b>(oracle_id)?;
 			convert_poly_witness_to_tower(witness_poly)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
@@ -869,7 +856,7 @@ where
 		mix_composition_prover,
 		trace_oracle
 			.iter_oracle_ids()
-			.map(|oracle_id| ext_index.get_multilin_poly(oracle_id))
+			.map(|oracle_id| witness.get_multilin_poly(oracle_id))
 			.collect::<Result<_, _>>()?,
 	)?;
 
@@ -894,9 +881,9 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
 		oracles,
-		&mut witness_index,
+		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
@@ -913,6 +900,10 @@ where
 		.find(|(batch_id, _)| *batch_id == trace_oracle.trace8b_batch_id)
 		.unwrap();
 
+	let trace1b_commit_polys = oracles
+		.committed_oracle_ids(trace_oracle.trace1b_batch_id)
+		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 	let trace1b_open_proof = pcs1b.prove_evaluation(
 		&mut challenger,
 		&trace1b_committed,
@@ -1029,7 +1020,7 @@ fn main() {
 
 	type U = <PackedBinaryField1x128b as WithUnderlier>::Underlier;
 
-	let log_size = get_log_trace_size().unwrap_or(16);
+	let log_size = get_log_trace_size().unwrap_or(12);
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size).unwrap();

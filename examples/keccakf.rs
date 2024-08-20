@@ -129,16 +129,6 @@ impl<P: PackedField> CompositionPoly<P> for SumComposition {
 		1
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != self.n_vars {
-			return Err(PolynomialError::IncorrectQuerySize {
-				expected: self.n_vars,
-			});
-		}
-		// Sum of scalar values at the corresponding positions of the packed values.
-		Ok(query.iter().copied().sum())
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != self.n_vars {
 			return Err(PolynomialError::IncorrectQuerySize {
@@ -437,20 +427,18 @@ fn prove<U, F, FW, DomainField, PCS, CH>(
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut challenger: CH,
-	witness: MultilinearExtensionIndex<U, FW>,
+	mut witness: MultilinearExtensionIndex<U, FW>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW> + PackScalar<DomainField>,
-	PackedType<U, FW>: PackedFieldIndexable,
 	F: TowerField + From<FW>,
+	PackedType<U, FW>: PackedFieldIndexable<Scalar = FW>,
 	FW: TowerField + From<F> + ExtensionField<DomainField>,
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 {
-	let mut trace_witness = witness.witness_index();
-
 	// Round 1
 	let trace_commit_polys = oracles
 		.committed_oracle_ids(trace_oracle.batch_id)
@@ -503,9 +491,9 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
 		oracles,
-		&mut trace_witness,
+		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
@@ -519,6 +507,10 @@ where
 		.expect("length is asserted to be 1");
 	assert_eq!(batch_id, trace_oracle.batch_id);
 
+	let trace_commit_polys = oracles
+		.committed_oracle_ids(trace_oracle.batch_id)
+		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 	let trace_open_proof = pcs.prove_evaluation(
 		&mut challenger,
 		&trace_committed,
@@ -709,6 +701,7 @@ fn main() {
 	let log_inv_rate = 1;
 
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
+	type FW = BinaryField128bPolyval;
 
 	let mut oracles = MultilinearOracleSet::new();
 	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
@@ -733,13 +726,11 @@ fn main() {
 	tracing::info!("Size of hashable Keccak-256 data: {}", data_hashed_256);
 	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
-	let witness =
-		generate_trace::<U, BinaryField128bPolyval>(log_size, &fixed_oracle, &trace_oracle)
-			.unwrap();
+	let witness = generate_trace::<U, FW>(log_size, &fixed_oracle, &trace_oracle).unwrap();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
-	let proof = prove::<_, BinaryField128b, BinaryField128bPolyval, BinaryField128bPolyval, _, _>(
+	let proof = prove::<_, BinaryField128b, FW, FW, _, _>(
 		log_size,
 		&mut oracles.clone(),
 		&fixed_oracle,

@@ -37,9 +37,6 @@ where
 	/// Total degree of the polynomial.
 	fn degree(&self) -> usize;
 
-	/// Evaluates the polynomial over scalars, returning a scalar.
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error>;
-
 	/// Evaluates the polynomial using packed values, where each packed value may contain multiple scalar values.
 	/// The evaluation follows SIMD semantics, meaning that operations are performed
 	/// element-wise across corresponding scalar values in the packed values.
@@ -65,13 +62,6 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 
 	fn degree(&self) -> usize {
 		1
-	}
-
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
-		if query.len() != 1 {
-			return Err(Error::IncorrectQuerySize { expected: 1 });
-		}
-		Ok(query[0])
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
@@ -110,7 +100,7 @@ where
 	n_vars: usize,
 	// The multilinear polynomials. The length of the vector matches `composition.n_vars()`.
 	pub multilinears: Vec<M>,
-	pub _p_marker: PhantomData<P>,
+	pub _marker: PhantomData<P>,
 }
 
 impl<P, C, M> MultilinearComposite<P, C, M>
@@ -142,7 +132,7 @@ where
 			n_vars,
 			composition,
 			multilinears,
-			_p_marker: PhantomData,
+			_marker: PhantomData,
 		})
 	}
 
@@ -150,18 +140,19 @@ where
 		let evals = self
 			.multilinears
 			.iter()
-			.map(|multilin| multilin.evaluate(query))
+			.map(|multilin| Ok::<P, Error>(P::set_single(multilin.evaluate(query)?)))
 			.collect::<Result<Vec<_>, _>>()?;
-		self.composition.evaluate_scalar(&evals)
+		Ok(self.composition.evaluate(&evals)?.get(0))
 	}
 
 	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
 		let evals = self
 			.multilinears
 			.iter()
-			.map(|multilin| multilin.evaluate_on_hypercube(index))
+			.map(|multilin| Ok::<P, Error>(P::set_single(multilin.evaluate_on_hypercube(index)?)))
 			.collect::<Result<Vec<_>, _>>()?;
-		self.composition.evaluate_scalar(&evals)
+
+		Ok(self.composition.evaluate(&evals)?.get(0))
 	}
 
 	pub fn max_individual_degree(&self) -> usize {
@@ -185,7 +176,7 @@ where
 			n_vars: self.n_vars,
 			composition: Arc::new(self.composition),
 			multilinears: self.multilinears,
-			_p_marker: PhantomData,
+			_marker: PhantomData,
 		}
 	}
 }
@@ -244,7 +235,7 @@ where
 			composition: self.composition.clone(),
 			n_vars: self.n_vars - query.n_vars(),
 			multilinears: new_multilinears,
-			_p_marker: PhantomData,
+			_marker: PhantomData,
 		})
 	}
 }

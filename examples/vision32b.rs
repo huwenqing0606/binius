@@ -167,15 +167,6 @@ impl<P: PackedField> CompositionPoly<P> for SumComposition {
 		1
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != self.n_vars {
-			return Err(PolynomialError::IncorrectQuerySize {
-				expected: self.n_vars,
-			});
-		}
-		Ok(query.iter().copied().sum())
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != self.n_vars {
 			return Err(PolynomialError::IncorrectQuerySize {
@@ -204,15 +195,6 @@ impl<P: PackedField> CompositionPoly<P> for SquareComposition {
 
 	fn degree(&self) -> usize {
 		2
-	}
-
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != 2 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 2 });
-		}
-		let x = query[0];
-		let y = query[1];
-		Ok(PackedField::square(x) + y)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
@@ -259,19 +241,6 @@ where
 
 	fn degree(&self) -> usize {
 		1
-	}
-
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != 4 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 4 });
-		}
-
-		let result = iter::zip(query[..3].iter(), self.coefficients[1..].iter())
-			.map(|(y_i, coeff)| *y_i * (*coeff))
-			.sum::<P::Scalar>()
-			+ P::Scalar::from(self.coefficients[0]);
-
-		Ok(result - query[3])
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
@@ -956,8 +925,7 @@ where
 	Comm: Clone,
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
 {
-	let ext_index = witness.to_index::<FW>(trace_oracle)?;
-	let mut trace_witness = ext_index.witness_index();
+	let mut ext_index = witness.to_index::<FW>(trace_oracle)?;
 
 	// Round 1
 	let trace_commit_polys = oracles
@@ -1018,9 +986,9 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, _, _>(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
 		oracles,
-		&mut trace_witness,
+		&mut ext_index,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
@@ -1031,6 +999,10 @@ where
 	let (batch_id, same_query_claim) = same_query_claims.into_iter().next().unwrap();
 	assert_eq!(batch_id, trace_oracle.trace_batch_id);
 
+	let trace_commit_polys = oracles
+		.committed_oracle_ids(trace_oracle.trace_batch_id)
+		.map(|oracle_id| ext_index.get::<BinaryField32b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 	let trace_open_proof = pcs.prove_evaluation(
 		&mut challenger,
 		&trace_committed,
