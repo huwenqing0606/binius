@@ -11,6 +11,8 @@ use super::{
 	AbstractSumcheckRound, AbstractSumcheckRoundClaim, Error, VerificationError,
 };
 
+use std::time::Instant;
+
 #[derive(Debug, Clone)]
 pub struct AbstractSumcheckBatchProof<F> {
 	pub rounds: Vec<AbstractSumcheckRound<F>>,
@@ -96,10 +98,14 @@ where
 		}
 
 		// Perform common update steps over all batched instances
+		let start = Instant::now();
 		provers_state.pre_execute_rounds(prev_rd_challenge.map(Into::into))?;
+		let duration = start.elapsed();
+		println!("round no {:?}: prover pre_execute_round: {:?}", round_no, duration);
 
 		// Process the older, reduced sumcheck instances
 		let mut batch_round_proof = AbstractSumcheckRound { coeffs: Vec::new() };
+		let start = Instant::now();
 		for (prover, coeff, prover_n_vars) in provers_with_batch_coeffs.iter_mut() {
 			let proof = if *prover_n_vars != n_vars {
 				provers_state.prover_execute_round(prover, prev_rd_challenge)?
@@ -109,6 +115,8 @@ where
 
 			mix_round_proofs(&mut batch_round_proof, &proof, *coeff);
 		}
+		let duration = start.elapsed();
+		println!("round no {:?}, prover_execute_round: {:?}", round_no, duration);
 
 		challenger.observe_slice(&batch_round_proof.coeffs);
 		round_proofs.push(batch_round_proof);

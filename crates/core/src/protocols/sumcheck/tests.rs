@@ -207,6 +207,14 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 }
 
 #[test]
+fn test_sumcheck_prove_verify_interaction_basic_stagetime_profiling() {
+	let n_vars = 5;
+	let n_multilinears = 3;
+	let switchover_rd = (1 + n_vars / 2) / 2;
+	test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
+}
+
+#[test]
 fn test_sumcheck_prove_verify_interaction_basic() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {

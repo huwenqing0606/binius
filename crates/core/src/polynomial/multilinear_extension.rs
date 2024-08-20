@@ -240,6 +240,7 @@ where
 		PE: PackedField,
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
+		// println!("MultilinearExtension::evaluate_partial_low_into called!");
 		if self.mu < query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
