@@ -30,6 +30,8 @@ macro_rules! impl_arithmetic_using_packed {
 			fn multiply(self, rhs: Self) -> Self {
 				use $crate::as_packed_field::AsPackedField;
 
+				#[cfg(feature="code_reading_wenqing")]
+				println!("TowerFieldArithmetic::multiply inside TowerFieldArithmetic: self {:?}, rhs {:?}", &self, &rhs);
 				$crate::binary_field_arithmetic::multiple_using_packed::<
 					<Self as AsPackedField<$name>>::Packed,
 				>(self, rhs)
@@ -102,7 +104,10 @@ impl_arithmetic_using_packed!(BinaryField128b);
 /// single-element arithmetics. That's why we need these functions
 #[inline]
 pub(super) fn multiple_using_packed<P: PackedField>(lhs: P::Scalar, rhs: P::Scalar) -> P::Scalar {
-	(P::set_single(lhs) * P::set_single(rhs)).get(0)
+	let result = (P::set_single(lhs) * P::set_single(rhs)).get(0);
+	#[cfg(feature = "code_reading_wenqing")]
+	println!("multiple_using_packed: lhs = {:?}, rhs = {:?}, result = {:?}", &lhs, &rhs, &result);
+	result
 }
 
 #[inline]

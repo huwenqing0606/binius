@@ -182,6 +182,9 @@ macro_rules! binary_field {
 			fn mul(self, rhs: Self) -> Self::Output {
 				$crate::tracing::trace_multiplication!($name);
 
+				#[cfg(feature="code_reading_wenqing")]
+				println!("TowerFieldArithmetic::multiply: self {:?}, rhs {:?}", &self, &rhs);
+
 				TowerFieldArithmetic::multiply(self, rhs)
 			}
 		}
